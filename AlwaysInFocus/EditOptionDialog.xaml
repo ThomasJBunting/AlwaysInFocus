@@ -1,0 +1,27 @@
+<Window x:Class="AlwaysInFocus.EditOptionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit Option" Height="180" Width="300" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Text="Display Text:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,5,5"/>
+        <TextBox x:Name="DisplayTextBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,5"/>
+
+        <TextBlock Text="ID:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,5,5"/>
+        <TextBox x:Name="IdTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,5"/>
+
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="OK" Width="60" Margin="0,10,5,0" IsDefault="True" Click="Ok_Click"/>
+            <Button Content="Cancel" Width="60" Margin="0,10,0,0" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window> 

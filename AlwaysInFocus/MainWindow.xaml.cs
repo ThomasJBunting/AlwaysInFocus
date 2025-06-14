@@ -293,13 +293,23 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
             trayIcon.Visible = true;
 
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
-            var openMenuItem = new System.Windows.Forms.ToolStripMenuItem("Open");
-            var exitMenuItem = new System.Windows.Forms.ToolStripMenuItem("Exit");
+            var openMenuItem = new System.Windows.Forms.ToolStripMenuItem("🖥 Show");
+            var toggleMenuItem = new System.Windows.Forms.ToolStripMenuItem("⚡ Toggle On/Off");
+            var exitMenuItem = new System.Windows.Forms.ToolStripMenuItem("✖️ Exit");
 
             openMenuItem.Click += (s, e) => 
             {
                 Show();
                 WindowState = WindowState.Normal;
+            };
+
+            toggleMenuItem.Click += (s, e) => 
+            {
+                if (DataContext is MainViewModel vm)
+                {
+                    vm.IsOn = !vm.IsOn;
+                    toggleMenuItem.Text = vm.IsOn ? "⚡ Turn Off" : "⚡ Turn On";
+                }
             };
 
             exitMenuItem.Click += (s, e) => 
@@ -309,6 +319,8 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
             };
 
             contextMenu.Items.Add(openMenuItem);
+            contextMenu.Items.Add(toggleMenuItem);
+            contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
             contextMenu.Items.Add(exitMenuItem);
             trayIcon.ContextMenuStrip = contextMenu;
 

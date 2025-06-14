@@ -5,11 +5,33 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AlwaysInFocus"
         mc:Ignorable="d"
-        Title="Window Finder" Height="320" Width="370"
+        Title="Always in Focus" Height="320" Width="370"
         Closing="Window_Closing">
     <Window.Resources>
         <local:ReferenceEqualsConverter x:Key="ReferenceEqualsConverter" />
         <local:ReferenceEqualsMultiConverter x:Key="ReferenceEqualsMultiConverter" />
+        
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FFE0E0E0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid Margin="10">
         <Grid.RowDefinitions>
@@ -18,31 +40,59 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Select Window Type:" Margin="0,0,0,5"/>
+        
 
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
             <!-- Dynamic Options -->
             <ItemsControl ItemsSource="{Binding DynamicOptions}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="0,2">
-                            <RadioButton GroupName="WindowOptions"
-                                         IsChecked="{Binding IsSelected, Mode=OneWay}"                                       
-                                         Checked="RadioButton_Checked">
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <RadioButton Grid.Column="0" GroupName="WindowOptions"
+                                       IsChecked="{Binding IsSelected, Mode=OneWay}"                                       
+                                       Checked="RadioButton_Checked">
                                 <TextBlock Text="{Binding DisplayText}" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
                             </RadioButton>
-                            <Button Content="Edit" Margin="10,0,0,0" Padding="5,0" Command="{Binding DataContext.EditOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                            <Button Content="Delete" Margin="5,0,0,0" Padding="5,0" Command="{Binding DataContext.DeleteOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Margin="10,0,0,0" Padding="5,0" 
+                                        Command="{Binding DataContext.EditOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource IconButtonStyle}">
+                                    <TextBlock Text="✏️" FontSize="16"/>
+                                </Button>
+                                <Button Margin="5,0,0,0" Padding="5,0" 
+                                        Command="{Binding DataContext.DeleteOptionCommand, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource IconButtonStyle}">
+                                    <TextBlock Text="🗑️" FontSize="16"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </StackPanel>
 
-        <Button Grid.Row="2" Content="Find Window" Click="FindWindow_Click" 
-                HorizontalAlignment="Center" Padding="10,5" Margin="0,10,0,0"/>
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <ToggleButton Grid.Row="2" Content="{Binding OnOffLabel}" IsChecked="{Binding IsOn, Mode=TwoWay}" 
-                      HorizontalAlignment="Right" Width="80" Margin="0,10,0,0"/>
+            <Button Grid.Row="0" Content="Window Selector" Click="FindWindow_Click" 
+                    HorizontalAlignment="Stretch" Padding="10,5" Margin="0,10,0,0"/>
+
+            <Separator Grid.Row="1" Margin="0,10"/>
+
+            <ToggleButton Grid.Row="2" Content="{Binding OnOffLabel}" IsChecked="{Binding IsOn, Mode=TwoWay}" 
+                          HorizontalAlignment="Stretch" Padding="10,5" Margin="0,0,0,0"/>
+        </Grid>
     </Grid>
 </Window>

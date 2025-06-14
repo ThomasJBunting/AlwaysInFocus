@@ -24,7 +24,18 @@ namespace AlwaysInFocus
         private bool isSelected;
         public string DisplayText { get => displayText; set { displayText = value; OnPropertyChanged(); } }
         public string Id { get => id; set { id = value; OnPropertyChanged(); } }
-        public bool IsSelected { get => isSelected; set { isSelected = value; OnPropertyChanged(); } }
+        public bool IsSelected 
+        { 
+            get => isSelected; 
+            set 
+            { 
+                if (isSelected != value)
+                {
+                    isSelected = value;
+                    OnPropertyChanged();
+                }
+            } 
+        }
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
@@ -77,7 +88,8 @@ namespace AlwaysInFocus
         public ICommand DeleteOptionCommand { get; set; }
         private const int MaxOptions = 5;
         private readonly string savePath = "window_options.csv";
-        private bool isOn = true;
+        private readonly string statePath = "window_state.csv";
+        private bool isOn = false;
         public bool IsOn
         {
             get => isOn;
@@ -90,6 +102,7 @@ namespace AlwaysInFocus
                     OnPropertyChanged(nameof(OnOffLabel));
                     if (isOn) OnMethod();
                     else OffMethod();
+                    SaveState();
                 }
             }
         }
@@ -102,13 +115,22 @@ namespace AlwaysInFocus
             {
                 if (_selectedOption != value)
                 {
+                    if (_selectedOption != null)
+                        _selectedOption.IsSelected = false;
+                    
                     _selectedOption = value;
+                    
+                    if (_selectedOption != null)
+                        _selectedOption.IsSelected = true;
+                    
                     OnPropertyChanged();
                 }
             }
         }
         public bool IsThisSelected => ReferenceEquals(this, SelectedOption);
         private IntPtr _winEventHook = IntPtr.Zero;
+        private string lastSelectedId;
+
         private void OnMethod()
         {
             if (SelectedOption == null)
@@ -171,13 +193,31 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
             EditOptionCommand = new RelayCommand(EditOption);
             DeleteOptionCommand = new RelayCommand(DeleteOption);
 
+            // Load state first to get the last selected ID
+            LoadState();
+
+            // Then load options
             LoadOptions();
 
             // Ensure PowerPoint option is always first
             if (!DynamicOptions.Any(opt => opt.Id == "POWERPNT"))
                 DynamicOptions.Insert(0, new WindowOption { DisplayText = "PowerPoint Presentation View", Id = "POWERPNT" });
 
-            SelectedOption = DynamicOptions[0];
+            // Now try to restore the selected option
+            if (!string.IsNullOrEmpty(lastSelectedId))
+            {
+                var option = DynamicOptions.FirstOrDefault(opt => opt.Id == lastSelectedId);
+                if (option != null)
+                {
+                    SelectedOption = option;
+                }
+            }
+
+            // If still no option is selected, select the first one
+            if (SelectedOption == null && DynamicOptions.Count > 0)
+            {
+                SelectedOption = DynamicOptions[0];
+            }
         }
         public void AddOption(string displayText, string id)
         {
@@ -220,9 +260,50 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
                 }
             }
         }
+        private void LoadState()
+        {
+            if (File.Exists(statePath))
+            {
+                try
+                {
+                    var lines = File.ReadAllLines(statePath);
+                    if (lines.Length >= 2)
+                    {
+                        // Load On/Off state
+                        isOn = bool.Parse(lines[0]);
+                        OnPropertyChanged(nameof(IsOn));
+                        OnPropertyChanged(nameof(OnOffLabel));
+
+                        // Store the selected ID for later use
+                        lastSelectedId = lines[1];
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error loading state: {ex.Message}");
+                }
+            }
+        }
+        public void SaveState()
+        {
+            try
+            {
+                var lines = new[]
+                {
+                    isOn.ToString(),
+                    SelectedOption?.Id ?? ""
+                };
+                File.WriteAllLines(statePath, lines);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error saving state: {ex.Message}");
+            }
+        }
         public void SaveOptions()
         {
             File.WriteAllLines(savePath, DynamicOptions.Select(opt => $"{opt.DisplayText},{opt.Id}"));
+            SaveState();
         }
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -248,6 +329,7 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
     public partial class MainWindow : Window
     {
         private NotifyIcon trayIcon;
+        private System.Windows.Forms.ToolStripMenuItem toggleMenuItem;
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -283,6 +365,18 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
             InitializeComponent();
             DataContext = new MainViewModel();
             InitializeTrayIcon();
+
+            // Subscribe to property changes
+            if (DataContext is MainViewModel vm)
+            {
+                vm.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(MainViewModel.IsOn))
+                    {
+                        UpdateTrayMenuText(vm.IsOn);
+                    }
+                };
+            }
         }
 
         private void InitializeTrayIcon()
@@ -294,7 +388,7 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
 
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
             var openMenuItem = new System.Windows.Forms.ToolStripMenuItem("🖥 Show");
-            var toggleMenuItem = new System.Windows.Forms.ToolStripMenuItem("⚡ Toggle On/Off");
+            toggleMenuItem = new System.Windows.Forms.ToolStripMenuItem("⚡ Toggle On/Off");
             var exitMenuItem = new System.Windows.Forms.ToolStripMenuItem("✖️ Exit");
 
             openMenuItem.Click += (s, e) => 
@@ -308,7 +402,7 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
                 if (DataContext is MainViewModel vm)
                 {
                     vm.IsOn = !vm.IsOn;
-                    toggleMenuItem.Text = vm.IsOn ? "⚡ Turn Off" : "⚡ Turn On";
+                    UpdateTrayMenuText(vm.IsOn);
                 }
             };
 
@@ -329,6 +423,20 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
                 Show();
                 WindowState = WindowState.Normal;
             };
+
+            // Initialize the menu text based on current state
+            if (DataContext is MainViewModel vm)
+            {
+                UpdateTrayMenuText(vm.IsOn);
+            }
+        }
+
+        private void UpdateTrayMenuText(bool isOn)
+        {
+            if (toggleMenuItem != null)
+            {
+                toggleMenuItem.Text = isOn ? "⚡ Turn Off" : "⚡ Turn On";
+            }
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)

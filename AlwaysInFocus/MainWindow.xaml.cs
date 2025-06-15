@@ -276,6 +276,14 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
 
                         // Store the selected ID for later use
                         lastSelectedId = lines[1];
+
+                        // If was on, trigger OnMethod after a short delay to ensure everything is initialized
+                        if (isOn)
+                        {
+                            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                                new Action(() => OnMethod()),
+                                System.Windows.Threading.DispatcherPriority.Loaded);
+                        }
                     }
                 }
                 catch (Exception ex)

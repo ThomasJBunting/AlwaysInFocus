@@ -382,7 +382,15 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
         private void InitializeTrayIcon()
         {
             trayIcon = new NotifyIcon();
-            trayIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AlwaysInFocus.ico");
+            if (System.IO.File.Exists(iconPath))
+            {
+                trayIcon.Icon = new System.Drawing.Icon(iconPath);
+            }
+            else
+            {
+                trayIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            }
             trayIcon.Text = "Window Finder";
             trayIcon.Visible = true;
 

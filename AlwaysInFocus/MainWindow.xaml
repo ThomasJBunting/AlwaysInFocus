@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:AlwaysInFocus"
         mc:Ignorable="d"
         Title="Always in Focus" Height="320" Width="370"
+        Icon="pack://application:,,,/AlwaysInFocus.ico"
         Closing="Window_Closing">
     <Window.Resources>
         <local:ReferenceEqualsConverter x:Key="ReferenceEqualsConverter" />
@@ -34,14 +35,17 @@
         </Style>
     </Window.Resources>
     <Grid Margin="10">
+        <Grid.Background>
+            <VisualBrush Visual="{Binding ElementName=BackgroundImage}" Opacity="0.1" Stretch="Uniform" AlignmentX="Center" AlignmentY="Center"/>
+        </Grid.Background>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <Image x:Name="BackgroundImage" Source="pack://application:,,,/Always in focus.png" Visibility="Collapsed"/>
         
-
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
             <!-- Dynamic Options -->
             <ItemsControl ItemsSource="{Binding DynamicOptions}">

@@ -50,3 +50,13 @@ jobs:
       with:
         name: AlwaysInFocus-Binaries
         path: AlwaysInFocus/bin/Release/net9.0-windows/*
+    
+    - name: 🚀 Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        files: AlwaysInFocus/bin/Release/net9.0-windows/*.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

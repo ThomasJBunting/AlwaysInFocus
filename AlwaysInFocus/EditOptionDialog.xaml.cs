@@ -19,6 +19,7 @@ namespace AlwaysInFocus
             DisplayText = DisplayTextBox.Text;
             Id = IdTextBox.Text;
             DialogResult = true;
+
         }
     }
 } 

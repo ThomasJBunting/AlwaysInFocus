@@ -38,10 +38,17 @@ jobs:
 
     - name: 🗂 List output directory
       run: dir AlwaysInFocus/bin/Release/net9.0-windows -Recurse
-    - name: Upload installer to GitHub Releases
+      
+    - name: 📦 Zip build output
+      run: |
+        mkdir output
+        xcopy AlwaysInFocus\bin\Release\net9.0-windows output /E /Y
+        powershell Compress-Archive -Path output\* -DestinationPath AlwaysInFocus.zip
+
+    - name: 🚀 Upload to GitHub Releases
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          Output/AlwaysInFocusInstaller.exe
+        files: AlwaysInFocus.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

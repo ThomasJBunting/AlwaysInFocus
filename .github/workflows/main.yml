@@ -6,49 +6,17 @@ on:
       - 'v*'  # Triggers on tags like v1.0.0
 
 jobs:
-  build:
-    runs-on: windows-latest
-
-    env:
-      Solution_Name: AlwaysInFocus.sln
-      Project_Path: AlwaysInFocus/AlwaysInFocus.csproj
-
+  release:
+    runs-on: ubuntu-latest
     steps:
-    - name: 📥 Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: 📥 Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AlwaysInFocus-Binaries
 
-    - name: 🛠 Install .NET 9 SDK
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 9.0.x
-
-    - name: 🛠 Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
-    - name: 🧪 Run unit tests
-      run: dotnet test
-
-    - name: 🔧 Restore NuGet packages
-      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=${{ matrix.configuration }}
-
-    - name: 🏗 Build the WPF project
-      run: msbuild $env:Project_Path /p:Configuration=${{ matrix.configuration }}
-
-    - name: 🗂 List output directory
-      run: dir AlwaysInFocus/bin/Release/net9.0-windows -Recurse
-      
-    - name: 📦 Zip build output
-      run: |
-        mkdir output
-        xcopy AlwaysInFocus\bin\Release\net9.0-windows output /E /Y
-        powershell Compress-Archive -Path output\* -DestinationPath AlwaysInFocus.zip
-
-    - name: 🚀 Upload to GitHub Releases
-      uses: softprops/action-gh-release@v1
-      with:
-        files: AlwaysInFocus.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      - name: 🚀 Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: AlwaysInFocus-Binaries.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

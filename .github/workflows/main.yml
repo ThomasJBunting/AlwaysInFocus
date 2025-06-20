@@ -1,0 +1,39 @@
+name: Build and Release AlwaysInFocus
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish WPF app
+        run: dotnet publish -c Release -o publish
+
+      - name: Install Inno Setup
+        run: choco install innosetup
+
+      - name: Build installer with Inno Setup
+        run: iscc setup.iss
+
+      - name: Upload installer to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            Output/AlwaysInFocusInstaller.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

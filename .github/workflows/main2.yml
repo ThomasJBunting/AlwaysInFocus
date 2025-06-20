@@ -25,6 +25,13 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: 🐛 Debug Tag
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        echo Tag: ${GITHUB_REF#refs/tags/} >> $env:GITHUB_WORKSPACE\tag.txt
+        type $env:GITHUB_WORKSPACE\tag.txt
+
+
     - name: 🛠 Install .NET 9 SDK
       uses: actions/setup-dotnet@v4
       with:

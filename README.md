@@ -10,7 +10,7 @@ A lightweight utility designed to solve a very specific—but surprisingly disru
 
 ## 🖼 Main Dashboard
 
-![Main Panel UI](Images/image-main.png) <!-- Replace with actual filename -->
+![Main Panel UI](Images/main.png) <!-- Replace with actual filename -->
 
 The main dashboard is your command center. It lists saved focus rules—like a preset for PowerPoint—and allows you to edit or delete them as needed. Clean interface, quick access.
 
@@ -18,7 +18,7 @@ The main dashboard is your command center. It lists saved focus rules—like a p
 
 ## 🛠 Rule Editor
 
-![Rule Editor](Images/image-editor.png) <!-- Replace with actual filename -->
+![Rule Editor](Images/Editor.png) <!-- Replace with actual filename -->
 
 Each rule includes:
 - A **custom label** (like “PowerPoint Presenting”),
@@ -43,7 +43,7 @@ This means:
 
 ## 📎 System Tray Controls
 
-![Tray Menu](Images/image-tray.png) <!-- Replace with actual filename -->
+![Tray Menu](Images/Tray.png) <!-- Replace with actual filename -->
 
 The app runs quietly in the background. From the tray, you can:
 - **Show** the main interface

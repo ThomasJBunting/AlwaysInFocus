@@ -1,0 +1,51 @@
+name: .NET Core Desktop
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        configuration: [Release]
+
+    runs-on: windows-latest
+
+    env:
+      Solution_Name: AlwaysInFocus.sln
+      Project_Path: AlwaysInFocus/AlwaysInFocus/AlwaysInFocus.csproj
+
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 🛠 Install .NET 9 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+
+    - name: 🛠 Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: 🧪 Run unit tests
+      run: dotnet test
+
+    - name: 🔧 Restore NuGet packages
+      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=${{ matrix.configuration }}
+
+    - name: 🏗 Build the WPF project
+      run: msbuild $env:Project_Path /p:Configuration=${{ matrix.configuration }}
+
+    - name: 🗂 List output directory
+      run: dir AlwaysInFocus/AlwaysInFocus/bin/Release/net9.0-windows -Recurse
+
+    - name: 📦 Upload build output
+      uses: actions/upload-artifact@v4
+      with:
+        name: AlwaysInFocus-Binaries
+        path: AlwaysInFocus/AlwaysInFocus/bin/Release/net9.0-windows/*

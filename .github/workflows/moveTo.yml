@@ -1,25 +1,30 @@
-name: Build and Release AlwaysInFocus
+name: Release from Build
 
 on:
-  workflow_dispatch:
-  push:
-    tags:
-      - 'v*'  # Triggers on tags like v1.0.0
-
+  workflow_run:
+    workflows: ["Build AlwaysInFocus"]  # Must match name in YAML 1
+    types:
+      - completed
 
 jobs:
   release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     steps:
-      - name: 📥 Download artifact
+      - name: 📥 Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: AlwaysInFocus-Binaries
+          path: ./release
 
-      - name: 🚀 Upload to GitHub Release
+      - name: 🗃 Zip release folder
+        run: zip -r AlwaysInFocus-${{ github.event.workflow_run.head_branch }}.zip ./release
+
+      - name: 🚀 Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: AlwaysInFocus-Binaries.zip
+          tag_name: v1.3.0  # You can also make this dynamic
+          files: AlwaysInFocus-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

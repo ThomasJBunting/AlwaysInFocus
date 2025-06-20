@@ -16,7 +16,7 @@ jobs:
   build:
     strategy:
       matrix:
-        configuration: [Publish]
+        configuration: [Release]
 
     runs-on: windows-latest
 

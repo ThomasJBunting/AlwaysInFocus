@@ -16,7 +16,7 @@ jobs:
 
     env:
       Solution_Name: AlwaysInFocus.sln
-      Project_Path: AlwaysInFocus/AlwaysInFocus/AlwaysInFocus.csproj
+      Project_Path: AlwaysInFocus/AlwaysInFocus.csproj
 
     steps:
     - name: 📥 Checkout repository

@@ -9,31 +9,39 @@ jobs:
   build:
     runs-on: windows-latest
 
+    env:
+      Solution_Name: AlwaysInFocus.sln
+      Project_Path: AlwaysInFocus/AlwaysInFocus.csproj
+
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Setup .NET 9 SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.x'
+    - name: 🛠 Install .NET 9 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
 
-      - name: Restore dependencies
-        run: dotnet restore
+    - name: 🛠 Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
 
-      - name: Publish WPF app
-        run: dotnet publish -c Release -o publish
+    - name: 🧪 Run unit tests
+      run: dotnet test
 
-      - name: Install Inno Setup
-        run: choco install innosetup
+    - name: 🔧 Restore NuGet packages
+      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=${{ matrix.configuration }}
 
-      - name: Build installer with Inno Setup
-        run: iscc setup.iss
+    - name: 🏗 Build the WPF project
+      run: msbuild $env:Project_Path /p:Configuration=${{ matrix.configuration }}
 
-      - name: Upload installer to GitHub Releases
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            Output/AlwaysInFocusInstaller.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: 🗂 List output directory
+      run: dir AlwaysInFocus/bin/Release/net9.0-windows -Recurse
+    - name: Upload installer to GitHub Releases
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          Output/AlwaysInFocusInstaller.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

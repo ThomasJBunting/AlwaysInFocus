@@ -8,7 +8,10 @@ on:
       - '*'
   pull_request:
     branches: [ "master" ]
-
+    
+permissions:
+  contents: write
+  
 jobs:
   build:
     strategy:

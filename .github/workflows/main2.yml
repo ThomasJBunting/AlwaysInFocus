@@ -57,10 +57,12 @@ jobs:
 
     - name: 🔧 Restore NuGet packages
       run: dotnet publish $env:Project_Path -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeAllContentForSelfExtract=true /p:IncludeNativeLibrariesForSelfExtract=true
+    
 
       
     - name: 🏗 Build the WPF project
-      run: dotnet publish $env:Project_Path -c ${{ matrix.configuration }} -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeAllContentForSelfExtract=true
+      run: msbuild $env:Project_Path /p:Configuration=${{ matrix.configuration }}
+      
 
     - name: 🗂 List output directory
       run: dir AlwaysInFocus/bin/Release/net9.0-windows -Recurse

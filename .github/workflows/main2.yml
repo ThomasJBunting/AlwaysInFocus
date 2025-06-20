@@ -56,8 +56,9 @@ jobs:
       run: dotnet test
 
     - name: 🔧 Restore NuGet packages
-      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=${{ matrix.configuration }}
+      run: dotnet publish $env:Project_Path -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeAllContentForSelfExtract=true /p:IncludeNativeLibrariesForSelfExtract=true
 
+      
     - name: 🏗 Build the WPF project
       run: dotnet publish $env:Project_Path -c ${{ matrix.configuration }} -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeAllContentForSelfExtract=true
 

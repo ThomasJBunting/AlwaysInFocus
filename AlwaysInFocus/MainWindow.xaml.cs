@@ -182,7 +182,7 @@ namespace AlwaysInFocus
                 Console.WriteLine($"No process found with name: {ProcessName}");
                 return;
             }
-
+             
             presenterHwnd = procs[0].MainWindowHandle;
             GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
 

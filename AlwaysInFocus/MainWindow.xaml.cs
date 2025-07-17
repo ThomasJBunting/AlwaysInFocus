@@ -24,17 +24,17 @@ namespace AlwaysInFocus
         private bool isSelected;
         public string DisplayText { get => displayText; set { displayText = value; OnPropertyChanged(); } }
         public string Id { get => id; set { id = value; OnPropertyChanged(); } }
-        public bool IsSelected 
-        { 
-            get => isSelected; 
-            set 
-            { 
+        public bool IsSelected
+        {
+            get => isSelected;
+            set
+            {
                 if (isSelected != value)
                 {
                     isSelected = value;
                     OnPropertyChanged();
                 }
-            } 
+            }
         }
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -43,43 +43,45 @@ namespace AlwaysInFocus
     public class MainViewModel : INotifyPropertyChanged
     {
 
-// Import FindWindow from user32.dll
-	[DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-	private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        // Import FindWindow from user32.dll
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
-	// Import SendMessage from user32.dll
-	[DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-	private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        // Import SendMessage from user32.dll
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
-	// Import GetWindowThreadProcessId from user32.dll
-	[DllImport("user32.dll", SetLastError = true)]
-	private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        // Import GetWindowThreadProcessId from user32.dll
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-	// Import GetForegroundWindow from user32.dll
-	//[DllImport("user32.dll")]
-	//private static extern IntPtr GetForegroundWindow();
+        // Import GetForegroundWindow from user32.dll
+        //[DllImport("user32.dll")]
+        //private static extern IntPtr GetForegroundWindow();
 
-	// Import SetWinEventHook from user32.dll
-	[DllImport("user32.dll")]
-	private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+        // Import SetWinEventHook from user32.dll
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
 
-	// Import UnhookWinEvent from user32.dll
-	[DllImport("user32.dll")]
-	private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+        // Import UnhookWinEvent from user32.dll
+        [DllImport("user32.dll")]
+        private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 
-	// Constants for window messages
-	private const uint WM_ACTIVATE = 0x0006;
-	private const int WA_ACTIVE = 1;
+        // Constants for window messages
+        private const uint WM_ACTIVATE = 0x0006;
+        private const int WA_ACTIVE = 1;
 
-	// Constants for event hook
-	private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
-	private const uint WINEVENT_OUTOFCONTEXT = 0;
+        // Constants for event hook
+        private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+        private const uint WINEVENT_OUTOFCONTEXT = 0;
 
-	// Delegate for event hook callback
-	private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+        // Delegate for event hook callback
+        private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
-	private static IntPtr presenterHwnd;
+        private static IntPtr presenterHwnd;
         private static uint presenterProcessId;
+        private static string ProcessName = "POWERPNT"; // Default to PowerPoint
+        private static System.Diagnostics.Process[] procs = new System.Diagnostics.Process[0];
 
         public bool IsPowerPointSelected { get => isPowerPointSelected; set { isPowerPointSelected = value; OnPropertyChanged(); } }
         private bool isPowerPointSelected;
@@ -117,12 +119,12 @@ namespace AlwaysInFocus
                 {
                     if (_selectedOption != null)
                         _selectedOption.IsSelected = false;
-                    
+
                     _selectedOption = value;
-                    
+
                     if (_selectedOption != null)
                         _selectedOption.IsSelected = true;
-                    
+
                     OnPropertyChanged();
                 }
             }
@@ -140,19 +142,25 @@ namespace AlwaysInFocus
             }
             // Use SelectedOption.Id to find the window
             // If Id is a process name, get the main window handle
+
+            ProcessName = SelectedOption.Id.ToUpperInvariant(); // Ensure case-insensitive comparison
+
             var procs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
-            if (procs.Length > 0)
-            {
-                presenterHwnd = procs[0].MainWindowHandle;
-                GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
-                _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, WinEventCallback, 0, 0, WINEVENT_OUTOFCONTEXT);
-                System.Diagnostics.Debug.WriteLine($"Turned ON for {SelectedOption.Id}");
-                SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
-            }
-            else
-            {
-                System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
-            }
+
+            _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, WinEventCallback, 0, 0, WINEVENT_OUTOFCONTEXT);
+            System.Diagnostics.Debug.WriteLine($"Turned ON for {SelectedOption.Id}");
+            SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+
+            //if (procs.Length > 0)
+            //{
+          
+              
+          
+            //}
+            //else
+            //{
+            //    System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
+            //}
         }
         private void OffMethod()
         {
@@ -164,28 +172,41 @@ namespace AlwaysInFocus
             System.Diagnostics.Debug.WriteLine("Turned OFF");
         }
 
-private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
-	{
-		if (hwnd == IntPtr.Zero) { 
-			Console.WriteLine($"hwnd was Zero...");
-		return;
-		}
+        private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
+        {
 
-		// Get the Process ID of the newly focused window
-		uint activeProcessId;
-		GetWindowThreadProcessId(hwnd, out activeProcessId);
+            procs = System.Diagnostics.Process.GetProcessesByName(ProcessName);
 
-		//LastKnowProcess = activeProcessId;
+            if (procs.Length == 0)
+            {
+                Console.WriteLine($"No process found with name: {ProcessName}");
+                return;
+            }
 
-		// Check if the active window has changed from Presenter View
-		if (activeProcessId != presenterProcessId)
-		{
-			Console.WriteLine($"Window focus changed to Process ID: {activeProcessId}. Restoring Presenter View...");
-			SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
-			Thread.Sleep(2);
-			SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
-		}
-    }
+            presenterHwnd = procs[0].MainWindowHandle;
+            GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
+
+            if (hwnd == IntPtr.Zero)
+            {
+                Console.WriteLine($"hwnd was Zero...");
+                return;
+            }
+
+            // Get the Process ID of the newly focused window
+            uint activeProcessId;
+            GetWindowThreadProcessId(hwnd, out activeProcessId);
+
+            //LastKnowProcess = activeProcessId;
+
+            // Check if the active window has changed from Presenter View
+            if (activeProcessId != presenterProcessId)
+            {
+                Console.WriteLine($"Window focus changed to Process ID: {activeProcessId}. Restoring Presenter View...");
+                SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                Thread.Sleep(2);
+                SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+            }
+        }
 
         public MainViewModel()
         {
@@ -407,13 +428,13 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
             toggleMenuItem = new System.Windows.Forms.ToolStripMenuItem("⚡ Toggle On/Off");
             var exitMenuItem = new System.Windows.Forms.ToolStripMenuItem("✖️ Exit");
 
-            openMenuItem.Click += (s, e) => 
+            openMenuItem.Click += (s, e) =>
             {
                 Show();
                 WindowState = WindowState.Normal;
             };
 
-            toggleMenuItem.Click += (s, e) => 
+            toggleMenuItem.Click += (s, e) =>
             {
                 if (DataContext is MainViewModel vm)
                 {
@@ -422,7 +443,7 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
                 }
             };
 
-            exitMenuItem.Click += (s, e) => 
+            exitMenuItem.Click += (s, e) =>
             {
                 trayIcon.Visible = false;
                 WPFApp.Current.Shutdown();
@@ -504,13 +525,16 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
                 uint pid;
                 GetWindowThreadProcessId(hWnd, out pid);
                 string processName = "";
-                try {
+                try
+                {
                     var proc = System.Diagnostics.Process.GetProcessById((int)pid);
                     processName = proc.ProcessName;
-                } catch {}
+                }
+                catch { }
 
                 // Add new option if under limit
-                Dispatcher.Invoke(() => {
+                Dispatcher.Invoke(() =>
+                {
                     if (DataContext is MainViewModel vm)
                     {
                         if (vm.DynamicOptions.Count < 5)
@@ -546,7 +570,7 @@ private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPt
         private void RadioButton_Checked(object sender, RoutedEventArgs e)
         {
 
-            
+
             //string name = ((System.Windows.Controls.RadioButton)sender).Name;
 
             if (DataContext is MainViewModel vm && sender is System.Windows.Controls.RadioButton rb && rb.DataContext is WindowOption option)

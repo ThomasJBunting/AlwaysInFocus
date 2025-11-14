@@ -511,8 +511,11 @@ namespace AlwaysInFocus
 
             openMenuItem.Click += (s, e) =>
             {
+                // Ensure window appears in taskbar and becomes visible
+                ShowInTaskbar = true;
                 Show();
                 WindowState = WindowState.Normal;
+                Activate();
             };
 
             toggleMenuItem.Click += (s, e) =>
@@ -527,6 +530,7 @@ namespace AlwaysInFocus
             exitMenuItem.Click += (s, e) =>
             {
                 trayIcon.Visible = false;
+                // Explicit shutdown to end application (we set ShutdownMode = OnExplicitShutdown)
                 WPFApp.Current.Shutdown();
             };
 
@@ -538,8 +542,11 @@ namespace AlwaysInFocus
 
             trayIcon.DoubleClick += (s, e) =>
             {
+                // Same behaviour as open: show window and put it in taskbar
+                ShowInTaskbar = true;
                 Show();
                 WindowState = WindowState.Normal;
+                Activate();
             };
 
             // Initialize the menu text based on current state
@@ -559,8 +566,11 @@ namespace AlwaysInFocus
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // Instead of exiting, hide to tray. Remove from taskbar so it behaves like normal tray apps.
             e.Cancel = true;
             Hide();
+            ShowInTaskbar = false;
+            WindowState = WindowState.Minimized;
         }
 
         protected override void OnSourceInitialized(EventArgs e)

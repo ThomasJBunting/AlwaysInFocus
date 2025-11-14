@@ -13,6 +13,8 @@ using System.Windows.Interop;
 using System.IO;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace AlwaysInFocus
 {
@@ -47,17 +49,22 @@ namespace AlwaysInFocus
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
-        // Import SendMessage from user32.dll
+        // Import SendMessage from user32.dll (kept for compatibility but not used in shutdown-sensitive flows)
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        // Use PostMessage (non-blocking) instead of SendMessage when restoring focus so the system shutdown won't deadlock
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         // Import GetWindowThreadProcessId from user32.dll
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-        // Import GetForegroundWindow from user32.dll
-        //[DllImport("user32.dll")]
-        //private static extern IntPtr GetForegroundWindow();
+        // Helper to check validity of hwnd
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindow(IntPtr hWnd);
 
         // Import SetWinEventHook from user32.dll
         [DllImport("user32.dll")]
@@ -77,6 +84,9 @@ namespace AlwaysInFocus
 
         // Delegate for event hook callback
         private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+        // Keep a static reference to the delegate so the GC cannot collect it while Windows may call it
+        private static WinEventDelegate _staticWinEventDelegate;
 
         private static IntPtr presenterHwnd;
         private static uint presenterProcessId;
@@ -140,71 +150,125 @@ namespace AlwaysInFocus
                 System.Windows.MessageBox.Show("Please select a window option before turning on.", "No Option Selected");
                 return;
             }
-            // Use SelectedOption.Id to find the window
-            // If Id is a process name, get the main window handle
 
             ProcessName = SelectedOption.Id.ToUpperInvariant(); // Ensure case-insensitive comparison
 
-            var procs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
+            // Try get the presenter hwnd up front so we can validate it before attempting to post messages.
+            var foundProcs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
+            if (foundProcs.Length == 0)
+            {
+                System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
+                return;
+            }
 
-            _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, WinEventCallback, 0, 0, WINEVENT_OUTOFCONTEXT);
+            presenterHwnd = foundProcs[0].MainWindowHandle;
+            if (presenterHwnd == IntPtr.Zero || !IsWindow(presenterHwnd))
+            {
+                System.Windows.MessageBox.Show($"Found process {SelectedOption.Id} but no valid main window handle.", "Error");
+                return;
+            }
+            GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
+
+            // Keep the delegate rooted to avoid it being GC'd while native code may call it
+            _staticWinEventDelegate = WinEventCallback;
+
+            _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _staticWinEventDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
             System.Diagnostics.Debug.WriteLine($"Turned ON for {SelectedOption.Id}");
-            SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
 
-            //if (procs.Length > 0)
-            //{
-          
-              
-          
-            //}
-            //else
-            //{
-            //    System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
-            //}
+            // Use PostMessage (non-blocking) instead of SendMessage to avoid deadlocks during shutdown
+            try
+            {
+                if (presenterHwnd != IntPtr.Zero && IsWindow(presenterHwnd))
+                {
+                    PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error posting activate message: {ex.Message}");
+            }
         }
         private void OffMethod()
         {
-            if (_winEventHook != IntPtr.Zero)
+            try
             {
-                UnhookWinEvent(_winEventHook);
-                _winEventHook = IntPtr.Zero;
+                if (_winEventHook != IntPtr.Zero)
+                {
+                    UnhookWinEvent(_winEventHook);
+                    _winEventHook = IntPtr.Zero;
+                }
             }
-            System.Diagnostics.Debug.WriteLine("Turned OFF");
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error unhooking win event: {ex.Message}");
+            }
+            finally
+            {
+                System.Diagnostics.Debug.WriteLine("Turned OFF");
+            }
         }
 
         private static void WinEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
         {
-
-            procs = System.Diagnostics.Process.GetProcessesByName(ProcessName);
-
-            if (procs.Length == 0)
+            // Defensive: any exception in this callback can crash the process when OS is shutting down.
+            try
             {
-                Console.WriteLine($"No process found with name: {ProcessName}");
-                return;
+                procs = System.Diagnostics.Process.GetProcessesByName(ProcessName);
+
+                if (procs.Length == 0)
+                {
+                    Console.WriteLine($"No process found with name: {ProcessName}");
+                    return;
+                }
+
+                presenterHwnd = procs[0].MainWindowHandle;
+                if (presenterHwnd == IntPtr.Zero || !IsWindow(presenterHwnd))
+                {
+                    Console.WriteLine($"Presenter hwnd invalid for process: {ProcessName}");
+                    return;
+                }
+
+                GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
+
+                if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+                {
+                    Console.WriteLine($"hwnd was Zero or invalid...");
+                    return;
+                }
+
+                // Get the Process ID of the newly focused window
+                uint activeProcessId;
+                GetWindowThreadProcessId(hwnd, out activeProcessId);
+
+                // Check if the active window has changed from Presenter View
+                if (activeProcessId != presenterProcessId)
+                {
+                    Console.WriteLine($"Window focus changed to Process ID: {activeProcessId}. Restoring Presenter View...");
+                    // Use PostMessage (non-blocking). Optionally post twice with a short delay to increase chance of success.
+                    try
+                    {
+                        PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                        // schedule a second attempt shortly after to avoid timing issues during OS state changes
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                Thread.Sleep(10);
+                                PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                            }
+                            catch { }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to post activate message: {ex.Message}");
+                    }
+                }
             }
-             
-            presenterHwnd = procs[0].MainWindowHandle;
-            GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
-
-            if (hwnd == IntPtr.Zero)
+            catch (Exception ex)
             {
-                Console.WriteLine($"hwnd was Zero...");
-                return;
-            }
-
-            // Get the Process ID of the newly focused window
-            uint activeProcessId;
-            GetWindowThreadProcessId(hwnd, out activeProcessId);
-
-            //LastKnowProcess = activeProcessId;
-
-            // Check if the active window has changed from Presenter View
-            if (activeProcessId != presenterProcessId)
-            {
-                Console.WriteLine($"Window focus changed to Process ID: {activeProcessId}. Restoring Presenter View...");
-                SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
-                Thread.Sleep(2);
-                SendMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                // Do not rethrow; swallow to protect shutdown flow
+                Console.WriteLine($"WinEventCallback exception: {ex.Message}");
             }
         }
 
@@ -213,6 +277,23 @@ namespace AlwaysInFocus
             DynamicOptions = new ObservableCollection<WindowOption>();
             EditOptionCommand = new RelayCommand(EditOption);
             DeleteOptionCommand = new RelayCommand(DeleteOption);
+
+            // Ensure we unhook on application exit to avoid callbacks after shutdown begins
+            if (WPFApp.Current != null)
+            {
+                WPFApp.Current.Exit += (s, e) =>
+                {
+                    try
+                    {
+                        if (_winEventHook != IntPtr.Zero)
+                        {
+                            UnhookWinEvent(_winEventHook);
+                            _winEventHook = IntPtr.Zero;
+                        }
+                    }
+                    catch { }
+                };
+            }
 
             // Load state first to get the last selected ID
             LoadState();

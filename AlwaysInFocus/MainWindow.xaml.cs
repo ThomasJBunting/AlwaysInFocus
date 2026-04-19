@@ -142,7 +142,7 @@ namespace AlwaysInFocus
         public bool IsThisSelected => ReferenceEquals(this, SelectedOption);
         private IntPtr _winEventHook = IntPtr.Zero;
         private string lastSelectedId;
-        private CancellationTokenSource processMonitorCts;
+        private CancellationTokenSource? processMonitorCts;
         private static readonly TimeSpan ProcessMonitorDelay = TimeSpan.FromSeconds(2);
 
         private void OnMethod()

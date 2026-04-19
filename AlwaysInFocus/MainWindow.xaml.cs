@@ -202,7 +202,17 @@ namespace AlwaysInFocus
         {
             StopProcessMonitor();
             processMonitorCts = new CancellationTokenSource();
-            _ = Task.Run(() => MonitorTargetProcessAsync(processMonitorCts.Token));
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await MonitorTargetProcessAsync(processMonitorCts.Token);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Process monitor failed: {ex.Message}");
+                }
+            });
         }
 
         private void StopProcessMonitor()
@@ -504,8 +514,12 @@ namespace AlwaysInFocus
                 if (isOn)
                 {
                     var executablePath = Environment.ProcessPath
-                        ?? System.Reflection.Assembly.GetExecutingAssembly().Location
                         ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+
+                    if (string.IsNullOrWhiteSpace(executablePath))
+                    {
+                        executablePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(executablePath))
                     {
@@ -706,6 +720,7 @@ namespace AlwaysInFocus
             trayIcon.Visible = false;
             trayIcon.Dispose();
             Close();
+            WPFApp.Current.Shutdown();
         }
 
         protected override void OnSourceInitialized(EventArgs e)

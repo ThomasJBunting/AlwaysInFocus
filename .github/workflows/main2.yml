@@ -4,16 +4,17 @@ on:
   workflow_dispatch:
   push:
     branches: [ "master" ]
-    tags: 
-      - '*'
   pull_request:
     branches: [ "master" ]
+  issue_comment:
+    types: [created]
     
 permissions:
   contents: write
   
 jobs:
   build:
+    if: github.event_name != 'issue_comment' || (github.event.issue.pull_request != null && startsWith(github.event.comment.body, 'v'))
     strategy:
       matrix:
         configuration: [Release]
@@ -29,20 +30,22 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        ref: master
 
     - name: Print GitHub Ref
       run: echo "GITHUB_REF is $GITHUB_REF"
 
-
-    - name: 🐛 Debug Tag
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: 🏷 Resolve release version from comment
+      if: github.event_name == 'issue_comment'
+      id: release_version
       shell: pwsh
       run: |
-        $tagName = "${{ github.ref }}".Replace('refs/tags/', '')
-        "Tag: $tagName" | Out-File -FilePath "$env:GITHUB_WORKSPACE\tag.txt"
-        Get-Content "$env:GITHUB_WORKSPACE\tag.txt"
-
-
+        $version = "${{ github.event.comment.body }}".Trim()
+        if ($version -notmatch '^v\d+\.\d+\.\d+([\-+][0-9A-Za-z\.-]+)?$') {
+          Write-Error "Comment must be a semantic version like v1.0.0"
+          exit 1
+        }
+        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
     - name: 🛠 Install .NET 9 SDK
       uses: actions/setup-dotnet@v4
@@ -72,11 +75,12 @@ jobs:
         path: AlwaysInFocus/bin/Release/net9.0-windows/win-x64/publish/*.exe
     
     - name: 🚀 Create GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
+      if: github.event_name == 'issue_comment'
       uses: softprops/action-gh-release@v2
       with:
-        name: Release ${{ github.ref_name }}
-        tag_name: ${{ github.ref_name }}
+        name: Release ${{ steps.release_version.outputs.version }}
+        tag_name: ${{ steps.release_version.outputs.version }}
+        target_commitish: master
         files: AlwaysInFocus/bin/Release/net9.0-windows/win-x64/publish/*.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

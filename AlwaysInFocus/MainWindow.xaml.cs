@@ -91,7 +91,7 @@ namespace AlwaysInFocus
         private static IntPtr presenterHwnd;
         private static uint presenterProcessId;
         private static string ProcessName = "POWERPNT"; // Default to PowerPoint
-        private static System.Diagnostics.Process[] procs = new System.Diagnostics.Process[0];
+        private static readonly object presenterSync = new object();
 
         public bool IsPowerPointSelected { get => isPowerPointSelected; set { isPowerPointSelected = value; OnPropertyChanged(); } }
         private bool isPowerPointSelected;
@@ -142,6 +142,8 @@ namespace AlwaysInFocus
         public bool IsThisSelected => ReferenceEquals(this, SelectedOption);
         private IntPtr _winEventHook = IntPtr.Zero;
         private string lastSelectedId;
+        private CancellationTokenSource processMonitorCts;
+        private static readonly TimeSpan ProcessMonitorDelay = TimeSpan.FromSeconds(2);
 
         private void OnMethod()
         {
@@ -152,51 +154,16 @@ namespace AlwaysInFocus
             }
 
             ProcessName = SelectedOption.Id.ToUpperInvariant(); // Ensure case-insensitive comparison
-
-            // Try get the presenter hwnd up front so we can validate it before attempting to post messages.
-            var foundProcs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
-            if (foundProcs.Length == 0)
-            {
-                System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
-                return;
-            }
-
-            presenterHwnd = foundProcs[0].MainWindowHandle;
-            if (presenterHwnd == IntPtr.Zero || !IsWindow(presenterHwnd))
-            {
-                System.Windows.MessageBox.Show($"Found process {SelectedOption.Id} but no valid main window handle.", "Error");
-                return;
-            }
-            GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
-
-            // Keep the delegate rooted to avoid it being GC'd while native code may call it
-            _staticWinEventDelegate = WinEventCallback;
-
-            _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _staticWinEventDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+            EnsureWinEventHookInstalled();
+            StartProcessMonitor();
             System.Diagnostics.Debug.WriteLine($"Turned ON for {SelectedOption.Id}");
-
-            // Use PostMessage (non-blocking) instead of SendMessage to avoid deadlocks during shutdown
-            try
-            {
-                if (presenterHwnd != IntPtr.Zero && IsWindow(presenterHwnd))
-                {
-                    PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error posting activate message: {ex.Message}");
-            }
         }
         private void OffMethod()
         {
             try
             {
-                if (_winEventHook != IntPtr.Zero)
-                {
-                    UnhookWinEvent(_winEventHook);
-                    _winEventHook = IntPtr.Zero;
-                }
+                StopProcessMonitor();
+                RemoveWinEventHook();
             }
             catch (Exception ex)
             {
@@ -204,7 +171,126 @@ namespace AlwaysInFocus
             }
             finally
             {
+                lock (presenterSync)
+                {
+                    presenterHwnd = IntPtr.Zero;
+                    presenterProcessId = 0;
+                }
                 System.Diagnostics.Debug.WriteLine("Turned OFF");
+            }
+        }
+
+        private void EnsureWinEventHookInstalled()
+        {
+            if (_winEventHook != IntPtr.Zero)
+                return;
+
+            _staticWinEventDelegate = WinEventCallback;
+            _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _staticWinEventDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+        }
+
+        private void RemoveWinEventHook()
+        {
+            if (_winEventHook == IntPtr.Zero)
+                return;
+
+            UnhookWinEvent(_winEventHook);
+            _winEventHook = IntPtr.Zero;
+        }
+
+        private void StartProcessMonitor()
+        {
+            StopProcessMonitor();
+            processMonitorCts = new CancellationTokenSource();
+            _ = Task.Run(() => MonitorTargetProcessAsync(processMonitorCts.Token));
+        }
+
+        private void StopProcessMonitor()
+        {
+            if (processMonitorCts == null)
+                return;
+
+            processMonitorCts.Cancel();
+            processMonitorCts.Dispose();
+            processMonitorCts = null;
+        }
+
+        private async Task MonitorTargetProcessAsync(CancellationToken cancellationToken)
+        {
+            bool hadTarget = false;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                bool foundTarget = TryRefreshPresenterTarget();
+                if (foundTarget && !hadTarget)
+                {
+                    TryActivatePresenterWindow();
+                }
+
+                hadTarget = foundTarget;
+
+                try
+                {
+                    await Task.Delay(ProcessMonitorDelay, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+
+        private static bool TryRefreshPresenterTarget()
+        {
+            try
+            {
+                var foundProcs = System.Diagnostics.Process.GetProcessesByName(ProcessName);
+                foreach (var proc in foundProcs)
+                {
+                    var hwnd = proc.MainWindowHandle;
+                    if (hwnd != IntPtr.Zero && IsWindow(hwnd))
+                    {
+                        uint pid;
+                        GetWindowThreadProcessId(hwnd, out pid);
+                        lock (presenterSync)
+                        {
+                            presenterHwnd = hwnd;
+                            presenterProcessId = pid;
+                        }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Target refresh failed: {ex.Message}");
+            }
+
+            lock (presenterSync)
+            {
+                presenterHwnd = IntPtr.Zero;
+                presenterProcessId = 0;
+            }
+            return false;
+        }
+
+        private static void TryActivatePresenterWindow()
+        {
+            try
+            {
+                IntPtr hwnd;
+                lock (presenterSync)
+                {
+                    hwnd = presenterHwnd;
+                }
+
+                if (hwnd != IntPtr.Zero && IsWindow(hwnd))
+                {
+                    PostMessage(hwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error posting activate message: {ex.Message}");
             }
         }
 
@@ -213,26 +299,21 @@ namespace AlwaysInFocus
             // Defensive: any exception in this callback can crash the process when OS is shutting down.
             try
             {
-                procs = System.Diagnostics.Process.GetProcessesByName(ProcessName);
-
-                if (procs.Length == 0)
+                IntPtr targetHwnd;
+                uint targetPid;
+                lock (presenterSync)
                 {
-                    Console.WriteLine($"No process found with name: {ProcessName}");
-                    return;
+                    targetHwnd = presenterHwnd;
+                    targetPid = presenterProcessId;
                 }
 
-                presenterHwnd = procs[0].MainWindowHandle;
-                if (presenterHwnd == IntPtr.Zero || !IsWindow(presenterHwnd))
+                if (targetHwnd == IntPtr.Zero || targetPid == 0 || !IsWindow(targetHwnd))
                 {
-                    Console.WriteLine($"Presenter hwnd invalid for process: {ProcessName}");
                     return;
                 }
-
-                GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
 
                 if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
                 {
-                    Console.WriteLine($"hwnd was Zero or invalid...");
                     return;
                 }
 
@@ -241,20 +322,19 @@ namespace AlwaysInFocus
                 GetWindowThreadProcessId(hwnd, out activeProcessId);
 
                 // Check if the active window has changed from Presenter View
-                if (activeProcessId != presenterProcessId)
+                if (activeProcessId != targetPid)
                 {
-                    Console.WriteLine($"Window focus changed to Process ID: {activeProcessId}. Restoring Presenter View...");
                     // Use PostMessage (non-blocking). Optionally post twice with a short delay to increase chance of success.
                     try
                     {
-                        PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                        PostMessage(targetHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
                         // schedule a second attempt shortly after to avoid timing issues during OS state changes
                         Task.Run(() =>
                         {
                             try
                             {
                                 Thread.Sleep(10);
-                                PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                                PostMessage(targetHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
                             }
                             catch { }
                         });
@@ -285,11 +365,7 @@ namespace AlwaysInFocus
                 {
                     try
                     {
-                        if (_winEventHook != IntPtr.Zero)
-                        {
-                            UnhookWinEvent(_winEventHook);
-                            _winEventHook = IntPtr.Zero;
-                        }
+                        OffMethod();
                     }
                     catch { }
                 };
@@ -379,6 +455,8 @@ namespace AlwaysInFocus
                         // Store the selected ID for later use
                         lastSelectedId = lines[1];
 
+                        UpdateWindowsStartupRegistration();
+
                         // If was on, trigger OnMethod after a short delay to ensure everything is initialized
                         if (isOn)
                         {
@@ -404,10 +482,44 @@ namespace AlwaysInFocus
                     SelectedOption?.Id ?? ""
                 };
                 File.WriteAllLines(statePath, lines);
+                UpdateWindowsStartupRegistration();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error saving state: {ex.Message}");
+            }
+        }
+
+        private void UpdateWindowsStartupRegistration()
+        {
+            try
+            {
+                using var runKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+                if (runKey == null)
+                {
+                    return;
+                }
+
+                const string startupValueName = "AlwaysInFocus";
+                if (isOn)
+                {
+                    var executablePath = Environment.ProcessPath
+                        ?? System.Reflection.Assembly.GetExecutingAssembly().Location
+                        ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+
+                    if (!string.IsNullOrWhiteSpace(executablePath))
+                    {
+                        runKey.SetValue(startupValueName, $"\"{executablePath}\"");
+                    }
+                }
+                else
+                {
+                    runKey.DeleteValue(startupValueName, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error updating Windows startup registration: {ex.Message}");
             }
         }
         public void SaveOptions()
@@ -465,6 +577,7 @@ namespace AlwaysInFocus
         private const int WM_LBUTTONDOWN = 0x0201;
         private IntPtr _mouseHook = IntPtr.Zero;
         private LowLevelMouseProc _mouseProc;
+        private bool _isExiting;
 
         private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -529,9 +642,7 @@ namespace AlwaysInFocus
 
             exitMenuItem.Click += (s, e) =>
             {
-                trayIcon.Visible = false;
-                // Explicit shutdown to end application (we set ShutdownMode = OnExplicitShutdown)
-                WPFApp.Current.Shutdown();
+                BeginExit();
             };
 
             contextMenu.Items.Add(openMenuItem);
@@ -566,11 +677,35 @@ namespace AlwaysInFocus
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (_isExiting)
+            {
+                e.Cancel = false;
+                return;
+            }
+
             // Instead of exiting, hide to tray. Remove from taskbar so it behaves like normal tray apps.
             e.Cancel = true;
             Hide();
             ShowInTaskbar = false;
             WindowState = WindowState.Minimized;
+        }
+
+        private void BeginExit()
+        {
+            if (_isExiting)
+            {
+                return;
+            }
+
+            _isExiting = true;
+            if (DataContext is MainViewModel vm)
+            {
+                vm.IsOn = false;
+            }
+
+            trayIcon.Visible = false;
+            trayIcon.Dispose();
+            Close();
         }
 
         protected override void OnSourceInitialized(EventArgs e)

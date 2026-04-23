@@ -695,6 +695,6 @@ namespace AlwaysInFocus
         {
             if ((bool)value) return new object[] { null, null }; // Handled in SelectedOption setter
             return null;
-        }
+        } 
     }
 }

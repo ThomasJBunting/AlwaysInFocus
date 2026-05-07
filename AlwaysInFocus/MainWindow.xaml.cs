@@ -143,49 +143,55 @@ namespace AlwaysInFocus
         private IntPtr _winEventHook = IntPtr.Zero;
         private string lastSelectedId;
 
-        private void OnMethod()
+        // silent=true suppresses dialogs when auto-starting from saved state on tray launch.
+        private void OnMethod(bool silent = false)
         {
             if (SelectedOption == null)
             {
-                System.Windows.MessageBox.Show("Please select a window option before turning on.", "No Option Selected");
+                if (!silent)
+                    System.Windows.MessageBox.Show("Please select a window option before turning on.", "No Option Selected");
                 return;
             }
 
-            ProcessName = SelectedOption.Id.ToUpperInvariant(); // Ensure case-insensitive comparison
+            ProcessName = SelectedOption.Id.ToUpperInvariant();
 
-            // Try get the presenter hwnd up front so we can validate it before attempting to post messages.
-            var foundProcs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
-            if (foundProcs.Length == 0)
-            {
-                System.Windows.MessageBox.Show($"Could not find process: {SelectedOption.Id}", "Error");
-                return;
-            }
-
-            presenterHwnd = foundProcs[0].MainWindowHandle;
-            if (presenterHwnd == IntPtr.Zero || !IsWindow(presenterHwnd))
-            {
-                System.Windows.MessageBox.Show($"Found process {SelectedOption.Id} but no valid main window handle.", "Error");
-                return;
-            }
-            GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
-
-            // Keep the delegate rooted to avoid it being GC'd while native code may call it
+            // Keep the delegate rooted to avoid it being GC'd while native code may call it.
             _staticWinEventDelegate = WinEventCallback;
 
+            // Always install the hook first. The WinEventCallback handles the case where the
+            // target process is not yet running by returning early and retrying on each subsequent
+            // foreground-change event, so the hook does not need the process to be alive now.
             _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _staticWinEventDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
             System.Diagnostics.Debug.WriteLine($"Turned ON for {SelectedOption.Id}");
 
-            // Use PostMessage (non-blocking) instead of SendMessage to avoid deadlocks during shutdown
-            try
+            // If the process is already running, try to activate its window immediately.
+            var foundProcs = System.Diagnostics.Process.GetProcessesByName(SelectedOption.Id);
+            if (foundProcs.Length > 0)
             {
+                presenterHwnd = foundProcs[0].MainWindowHandle;
                 if (presenterHwnd != IntPtr.Zero && IsWindow(presenterHwnd))
                 {
-                    PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                    GetWindowThreadProcessId(presenterHwnd, out presenterProcessId);
+                    // Use PostMessage (non-blocking) to avoid deadlocks during shutdown.
+                    try
+                    {
+                        PostMessage(presenterHwnd, WM_ACTIVATE, (IntPtr)WA_ACTIVE, IntPtr.Zero);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error posting activate message: {ex.Message}");
+                    }
                 }
             }
-            catch (Exception ex)
+            else if (!silent)
             {
-                System.Diagnostics.Debug.WriteLine($"Error posting activate message: {ex.Message}");
+                // Inform the user only on a manual toggle. The hook is still active and will
+                // begin enforcing focus automatically once the target process starts.
+                System.Windows.MessageBox.Show(
+                    $"'{SelectedOption.DisplayText}' is not currently running. Focus enforcement will activate automatically when it starts.",
+                    "Process Not Found",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
             }
         }
         private void OffMethod()
@@ -379,12 +385,16 @@ namespace AlwaysInFocus
                         // Store the selected ID for later use
                         lastSelectedId = lines[1];
 
-                        // If was on, trigger OnMethod after a short delay to ensure everything is initialized
+                        // If was on, re-apply focus enforcement after the app is fully initialised.
+                        // Use ApplicationIdle priority so the deferred call runs after all startup
+                        // work (including option/state loading) is complete, even when the window
+                        // starts hidden in the system tray. Pass silent=true to suppress dialogs
+                        // that would be inappropriate during unattended auto-start.
                         if (isOn)
                         {
                             System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                                new Action(() => OnMethod()),
-                                System.Windows.Threading.DispatcherPriority.Loaded);
+                                new Action(() => OnMethod(silent: true)),
+                                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                         }
                     }
                 }
